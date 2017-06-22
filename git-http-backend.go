@@ -129,6 +129,7 @@ func serviceRpc(hr HandlerReq) {
 	}
 
 	in.Write(input)
+	in.Close()
 	io.Copy(w, stdout)
 	cmd.Wait()
 }
