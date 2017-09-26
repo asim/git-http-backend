@@ -1,9 +1,9 @@
 package main
 
 import (
+	"compress/gzip"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"log"
 	"net/http"
 	"os"
@@ -105,8 +105,6 @@ func serviceRpc(hr HandlerReq) {
 		return
 	}
 
-	input, _ := ioutil.ReadAll(r.Body)
-
 	w.Header().Set("Content-Type", fmt.Sprintf("application/x-git-%s-result", rpc))
 	w.WriteHeader(http.StatusOK)
 
@@ -128,7 +126,15 @@ func serviceRpc(hr HandlerReq) {
 		log.Print(err)
 	}
 
-	in.Write(input)
+	var reader io.ReadCloser
+	switch r.Header.Get("Content-Encoding") {
+	case "gzip":
+		reader, err = gzip.NewReader(r.Body)
+		defer reader.Close()
+	default:
+		reader = r.Body
+	}
+	io.Copy(in, reader)
 	in.Close()
 	io.Copy(w, stdout)
 	cmd.Wait()
