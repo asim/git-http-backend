@@ -363,7 +363,7 @@ func main() {
 
 	http.HandleFunc("/", requestHandler())
 
-	err := http.ListenAndServe(":8080", nil)
+	err := http.ListenAndServe(address, nil)
 	if err != nil {
 		log.Fatal("ListenAndServe: ", err)
 	}
