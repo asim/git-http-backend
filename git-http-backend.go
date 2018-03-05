@@ -2,6 +2,7 @@ package main
 
 import (
 	"compress/gzip"
+	"flag"
 	"fmt"
 	"io"
 	"log"
@@ -55,6 +56,16 @@ var services = map[string]Service{
 	"(.*?)/objects/[0-9a-f]{2}/[0-9a-f]{38}$":      Service{"GET", getLooseObject, ""},
 	"(.*?)/objects/pack/pack-[0-9a-f]{40}\\.pack$": Service{"GET", getPackFile, ""},
 	"(.*?)/objects/pack/pack-[0-9a-f]{40}\\.idx$":  Service{"GET", getIdxFile, ""},
+}
+
+var (
+	address = ":8080"
+)
+
+func init() {
+	flag.StringVar(&config.ProjectRoot, "project_root", config.ProjectRoot, "set project root")
+	flag.StringVar(&config.GitBinPath, "git_bin_path", config.GitBinPath, "set git bin path")
+	flag.StringVar(&address, "server_address", address, "set server address")
 }
 
 // Request handling function
@@ -348,6 +359,8 @@ func hdrCacheForever(w http.ResponseWriter) {
 // Main
 
 func main() {
+	flag.Parse()
+
 	http.HandleFunc("/", requestHandler())
 
 	err := http.ListenAndServe(":8080", nil)
