@@ -1,10 +1,8 @@
 package main
 
 import (
-	"compress/gzip"
 	"flag"
 	"fmt"
-	"io"
 	"log"
 	"net/http"
 	"os"
@@ -14,6 +12,9 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"io"
+
+	"github.com/valyala/fasthttp"
 )
 
 type Service struct {
@@ -30,8 +31,7 @@ type Config struct {
 }
 
 type HandlerReq struct {
-	w    http.ResponseWriter
-	r    *http.Request
+	r    *fasthttp.RequestCtx
 	Rpc  string
 	Dir  string
 	File string
@@ -70,54 +70,57 @@ func init() {
 
 // Request handling function
 
-func requestHandler() http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		log.Printf("%s %s %s %s", r.RemoteAddr, r.Method, r.URL.Path, r.Proto)
-		for match, service := range services {
-			re, err := regexp.Compile(match)
-			if err != nil {
-				log.Print(err)
-			}
+func requestHandler(r *fasthttp.RequestCtx) {
+	proto := ""
+	if r.Request.Header.IsHTTP11() {
+		proto = "HTTP 1.1"
+	}
+	log.Printf("%s %s %s %s", r.RemoteAddr(), r.Method(), r.URI().Path(), proto)
+	for match, service := range services {
+		re, err := regexp.Compile(match)
+		if err != nil {
+			log.Print(err)
+		}
 
-			if m := re.FindStringSubmatch(r.URL.Path); m != nil {
-				if service.Method != r.Method {
-					renderMethodNotAllowed(w, r)
-					return
-				}
-
-				rpc := service.Rpc
-				file := strings.Replace(r.URL.Path, m[1]+"/", "", 1)
-				dir, err := getGitDir(m[1])
-
-				if err != nil {
-					log.Print(err)
-					renderNotFound(w)
-					return
-				}
-
-				hr := HandlerReq{w, r, rpc, dir, file}
-				service.Handler(hr)
+		if m := re.FindStringSubmatch(string(r.URI().Path())); m != nil {
+			if service.Method != string(r.Method()) {
+				renderMethodNotAllowed(r)
 				return
 			}
+
+			rpc := service.Rpc
+			file := strings.Replace(string(r.Path()), m[1]+"/", "", 1)
+			dir, err := getGitDir(m[1])
+
+			if err != nil {
+				log.Print(err)
+				renderNotFound(r)
+				return
+			}
+
+			hr := HandlerReq{r, rpc, dir, file}
+			service.Handler(hr)
+			return
 		}
-		renderNotFound(w)
-		return
 	}
+	renderNotFound(r)
+	return
+
 }
 
 // Actual command handling functions
 
 func serviceRpc(hr HandlerReq) {
-	w, r, rpc, dir := hr.w, hr.r, hr.Rpc, hr.Dir
+	r, rpc, dir := hr.r, hr.Rpc, hr.Dir
 	access := hasAccess(r, dir, rpc, true)
 
 	if access == false {
-		renderNoAccess(w)
+		renderNoAccess(r)
 		return
 	}
 
-	w.Header().Set("Content-Type", fmt.Sprintf("application/x-git-%s-result", rpc))
-	w.WriteHeader(http.StatusOK)
+	r.SetContentType(fmt.Sprintf("application/x-git-%s-result", rpc))
+	r.SetStatusCode(http.StatusOK)
 
 	args := []string{rpc, "--stateless-rpc", dir}
 	cmd := exec.Command(config.GitBinPath, args...)
@@ -137,83 +140,81 @@ func serviceRpc(hr HandlerReq) {
 		log.Print(err)
 	}
 
-	var reader io.ReadCloser
-	switch r.Header.Get("Content-Encoding") {
+	switch string(r.Request.Header.Peek("Content-Encoding")) {
 	case "gzip":
-		reader, err = gzip.NewReader(r.Body)
-		defer reader.Close()
+		body_bytes, _ := r.Request.BodyGunzip()
+		in.Write(body_bytes)
 	default:
-		reader = r.Body
+		in.Write(r.PostBody())
 	}
-	io.Copy(in, reader)
 	in.Close()
-	io.Copy(w, stdout)
+	io.Copy(r, stdout)
 	cmd.Wait()
 }
 
 func getInfoRefs(hr HandlerReq) {
-	w, r, dir := hr.w, hr.r, hr.Dir
+	r, dir := hr.r, hr.Dir
 	service_name := getServiceType(r)
 	access := hasAccess(r, dir, service_name, false)
 
 	if access {
 		args := []string{service_name, "--stateless-rpc", "--advertise-refs", "."}
+		fmt.Println(args)
 		refs := gitCommand(dir, args...)
 
-		hdrNocache(w)
-		w.Header().Set("Content-Type", fmt.Sprintf("application/x-git-%s-advertisement", service_name))
-		w.WriteHeader(http.StatusOK)
-		w.Write(packetWrite("# service=git-" + service_name + "\n"))
-		w.Write(packetFlush())
-		w.Write(refs)
+		hdrNocache(r)
+		r.Response.Header.Set("Content-Type", fmt.Sprintf("application/x-git-%s-advertisement", service_name))
+		r.SetStatusCode(http.StatusOK)
+		r.Write(packetWrite("# service=git-" + service_name + "\n"))
+		r.Write(packetFlush())
+		r.Write(refs)
 	} else {
 		updateServerInfo(dir)
-		hdrNocache(w)
+		hdrNocache(r)
 		sendFile("text/plain; charset=utf-8", hr)
 	}
 }
 
 func getInfoPacks(hr HandlerReq) {
-	hdrCacheForever(hr.w)
+	hdrCacheForever(hr.r)
 	sendFile("text/plain; charset=utf-8", hr)
 }
 
 func getLooseObject(hr HandlerReq) {
-	hdrCacheForever(hr.w)
+	hdrCacheForever(hr.r)
 	sendFile("application/x-git-loose-object", hr)
 }
 
 func getPackFile(hr HandlerReq) {
-	hdrCacheForever(hr.w)
+	hdrCacheForever(hr.r)
 	sendFile("application/x-git-packed-objects", hr)
 }
 
 func getIdxFile(hr HandlerReq) {
-	hdrCacheForever(hr.w)
+	hdrCacheForever(hr.r)
 	sendFile("application/x-git-packed-objects-toc", hr)
 }
 
 func getTextFile(hr HandlerReq) {
-	hdrNocache(hr.w)
+	hdrNocache(hr.r)
 	sendFile("text/plain", hr)
 }
 
 // Logic helping functions
 
 func sendFile(content_type string, hr HandlerReq) {
-	w, r := hr.w, hr.r
+	r := hr.r
 	req_file := path.Join(hr.Dir, hr.File)
 
 	f, err := os.Stat(req_file)
 	if os.IsNotExist(err) {
-		renderNotFound(w)
+		renderNotFound(r)
 		return
 	}
-
-	w.Header().Set("Content-Type", content_type)
-	w.Header().Set("Content-Length", fmt.Sprintf("%d", f.Size()))
-	w.Header().Set("Last-Modified", f.ModTime().Format(http.TimeFormat))
-	http.ServeFile(w, r, req_file)
+	r.Response.Header.Set("Content-Type", content_type)
+	r.Response.Header.Set("Content-Length", fmt.Sprintf("%d", f.Size()))
+	r.Response.Header.Set("Last-Modified", f.ModTime().Format(http.TimeFormat))
+	fasthttp.ServeFile(r, req_file)
 }
 
 func getGitDir(file_path string) (string, error) {
@@ -238,8 +239,8 @@ func getGitDir(file_path string) (string, error) {
 	return f, nil
 }
 
-func getServiceType(r *http.Request) string {
-	service_type := r.FormValue("service")
+func getServiceType(r *fasthttp.RequestCtx) string {
+	service_type := string(r.FormValue("service"))
 
 	if s := strings.HasPrefix(service_type, "git-"); !s {
 		return ""
@@ -248,9 +249,9 @@ func getServiceType(r *http.Request) string {
 	return strings.Replace(service_type, "git-", "", 1)
 }
 
-func hasAccess(r *http.Request, dir string, rpc string, check_content_type bool) bool {
+func hasAccess(r *fasthttp.RequestCtx, dir string, rpc string, check_content_type bool) bool {
 	if check_content_type {
-		if r.Header.Get("Content-Type") != fmt.Sprintf("application/x-git-%s-request", rpc) {
+		if string(r.Request.Header.ContentType()) != fmt.Sprintf("application/x-git-%s-request", rpc) {
 			return false
 		}
 	}
@@ -304,24 +305,24 @@ func gitCommand(dir string, args ...string) []byte {
 
 // HTTP error response handling functions
 
-func renderMethodNotAllowed(w http.ResponseWriter, r *http.Request) {
-	if r.Proto == "HTTP/1.1" {
-		w.WriteHeader(http.StatusMethodNotAllowed)
-		w.Write([]byte("Method Not Allowed"))
+func renderMethodNotAllowed(r *fasthttp.RequestCtx) {
+	if r.Request.Header.IsHTTP11() {
+		r.SetStatusCode(http.StatusMethodNotAllowed)
+		r.Write([]byte("Method Not Allowed"))
 	} else {
-		w.WriteHeader(http.StatusBadRequest)
-		w.Write([]byte("Bad Request"))
+		r.SetStatusCode(http.StatusBadRequest)
+		r.Write([]byte("Bad Request"))
 	}
 }
 
-func renderNotFound(w http.ResponseWriter) {
-	w.WriteHeader(http.StatusNotFound)
-	w.Write([]byte("Not Found"))
+func renderNotFound(r *fasthttp.RequestCtx) {
+	r.SetStatusCode(http.StatusNotFound)
+	r.Write([]byte("Not Found"))
 }
 
-func renderNoAccess(w http.ResponseWriter) {
-	w.WriteHeader(http.StatusForbidden)
-	w.Write([]byte("Forbidden"))
+func renderNoAccess(r *fasthttp.RequestCtx) {
+	r.SetStatusCode(http.StatusForbidden)
+	r.Write([]byte("Forbidden"))
 }
 
 // Packet-line handling function
@@ -342,18 +343,18 @@ func packetWrite(str string) []byte {
 
 // Header writing functions
 
-func hdrNocache(w http.ResponseWriter) {
-	w.Header().Set("Expires", "Fri, 01 Jan 1980 00:00:00 GMT")
-	w.Header().Set("Pragma", "no-cache")
-	w.Header().Set("Cache-Control", "no-cache, max-age=0, must-revalidate")
+func hdrNocache(w *fasthttp.RequestCtx) {
+	w.Response.Header.Set("Expires", "Fri, 01 Jan 1980 00:00:00 GMT")
+	w.Response.Header.Set("Pragma", "no-cache")
+	w.Response.Header.Set("Cache-Control", "no-cache, max-age=0, must-revalidate")
 }
 
-func hdrCacheForever(w http.ResponseWriter) {
+func hdrCacheForever(w *fasthttp.RequestCtx) {
 	now := time.Now().Unix()
 	expires := now + 31536000
-	w.Header().Set("Date", fmt.Sprintf("%d", now))
-	w.Header().Set("Expires", fmt.Sprintf("%d", expires))
-	w.Header().Set("Cache-Control", "public, max-age=31536000")
+	w.Response.Header.Set("Date", fmt.Sprintf("%d", now))
+	w.Response.Header.Set("Expires", fmt.Sprintf("%d", expires))
+	w.Response.Header.Set("Cache-Control", "public, max-age=31536000")
 }
 
 // Main
@@ -361,9 +362,7 @@ func hdrCacheForever(w http.ResponseWriter) {
 func main() {
 	flag.Parse()
 
-	http.HandleFunc("/", requestHandler())
-
-	err := http.ListenAndServe(address, nil)
+	err := fasthttp.ListenAndServe(address, requestHandler)
 	if err != nil {
 		log.Fatal("ListenAndServe: ", err)
 	}
