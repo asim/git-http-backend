@@ -23,10 +23,13 @@ type Service struct {
 }
 
 type Config struct {
-	ProjectRoot string
-	GitBinPath  string
-	UploadPack  bool
-	ReceivePack bool
+	AuthPassEnvVar string
+	AuthUserEnvVar string
+	DefaultEnv     string
+	ProjectRoot    string
+	GitBinPath     string
+	UploadPack     bool
+	ReceivePack    bool
 }
 
 type HandlerReq struct {
@@ -38,10 +41,13 @@ type HandlerReq struct {
 }
 
 var config Config = Config{
-	ProjectRoot: "/tmp",
-	GitBinPath:  "/usr/bin/git",
-	UploadPack:  true,
-	ReceivePack: true,
+	AuthPassEnvVar: "",
+	AuthUserEnvVar: "",
+	DefaultEnv:     "",
+	ProjectRoot:    "/tmp",
+	GitBinPath:     "/usr/bin/git",
+	UploadPack:     true,
+	ReceivePack:    true,
 }
 
 var services = map[string]Service{
@@ -63,6 +69,9 @@ var (
 )
 
 func init() {
+	flag.StringVar(&config.AuthPassEnvVar, "auth_pass_env_var", config.AuthPassEnvVar, "set an env var to provide the basic auth pass as")
+	flag.StringVar(&config.AuthUserEnvVar, "auth_user_env_var", config.AuthUserEnvVar, "set an env var to provide the basic auth user as")
+	flag.StringVar(&config.DefaultEnv, "default_env", config.DefaultEnv, "set the default env")
 	flag.StringVar(&config.ProjectRoot, "project_root", config.ProjectRoot, "set project root")
 	flag.StringVar(&config.GitBinPath, "git_bin_path", config.GitBinPath, "set git bin path")
 	flag.StringVar(&address, "server_address", address, "set server address")
@@ -119,14 +128,20 @@ func serviceRpc(hr HandlerReq) {
 	w.Header().Set("Content-Type", fmt.Sprintf("application/x-git-%s-result", rpc))
 	w.WriteHeader(http.StatusOK)
 
-	env := []string{
-		"SSH_USER=git-http-backend",
+	env := []string{}
+
+	if config.DefaultEnv != "" {
+		env = append(env, config.DefaultEnv)
 	}
 
-	user, _, authok := r.BasicAuth()
+	user, password, authok := r.BasicAuth()
 	if authok {
-		env = append(env, fmt.Sprintf("NAME=%s", user))
-		env = append(env, fmt.Sprintf("SSH_NAME=%s", user))
+		if config.AuthUserEnvVar != "" {
+			env = append(env, fmt.Sprintf("%s=%s", config.AuthUserEnvVar, user))
+		}
+		if config.AuthPassEnvVar != "" {
+			env = append(env, fmt.Sprintf("%s=%s", config.AuthPassEnvVar, password))
+		}
 	}
 
 	args := []string{rpc, "--stateless-rpc", dir}
