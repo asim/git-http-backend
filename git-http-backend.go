@@ -126,6 +126,9 @@ func serviceRpc(hr HandlerReq) {
 	}
 
 	w.Header().Set("Content-Type", fmt.Sprintf("application/x-git-%s-result", rpc))
+	w.Header().Set("Connection", "Keep-Alive")
+	w.Header().Set("Transfer-Encoding", "chunked")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.WriteHeader(http.StatusOK)
 
 	env := []string{}
@@ -177,7 +180,30 @@ func serviceRpc(hr HandlerReq) {
 	}
 	io.Copy(in, reader)
 	in.Close()
-	io.Copy(w, stdout)
+
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		panic("expected http.ResponseWriter to be an http.Flusher")
+	}
+
+	p := make([]byte, 1024)
+	for {
+		n_read, err := stdout.Read(p)
+		if err == io.EOF {
+			break
+		}
+		n_write, err := w.Write(p[:n_read])
+		if err != nil {
+			fmt.Println(err)
+			os.Exit(1)
+		}
+		if n_read != n_write {
+			fmt.Printf("failed to write data: %d read, %d written\n", n_read, n_write)
+			os.Exit(1)
+		}
+		flusher.Flush()
+	}
+
 	cmd.Wait()
 }
 
