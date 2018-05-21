@@ -121,6 +121,10 @@ func serviceRpc(hr HandlerReq) {
 
 	args := []string{rpc, "--stateless-rpc", dir}
 	cmd := exec.Command(config.GitBinPath, args...)
+	version := r.Header.Get("Git-Protocol")
+	if len(version) != 0 {
+		cmd.Env = append(os.Environ(), fmt.Sprintf("GIT_PROTOCOL=%s", version))
+	}
 	cmd.Dir = dir
 	in, err := cmd.StdinPipe()
 	if err != nil {
@@ -155,16 +159,18 @@ func getInfoRefs(hr HandlerReq) {
 	w, r, dir := hr.w, hr.r, hr.Dir
 	service_name := getServiceType(r)
 	access := hasAccess(r, dir, service_name, false)
-
+	version := r.Header.Get("Git-Protocol")
 	if access {
 		args := []string{service_name, "--stateless-rpc", "--advertise-refs", "."}
-		refs := gitCommand(dir, args...)
+		refs := gitCommand(dir, version, args...)
 
 		hdrNocache(w)
 		w.Header().Set("Content-Type", fmt.Sprintf("application/x-git-%s-advertisement", service_name))
 		w.WriteHeader(http.StatusOK)
-		w.Write(packetWrite("# service=git-" + service_name + "\n"))
-		w.Write(packetFlush())
+		if len(version) == 0 {
+			w.Write(packetWrite("# service=git-" + service_name + "\n"))
+			w.Write(packetFlush())
+		}
 		w.Write(refs)
 	} else {
 		updateServerInfo(dir)
@@ -281,17 +287,20 @@ func getConfigSetting(service_name string, dir string) bool {
 
 func getGitConfig(config_name string, dir string) string {
 	args := []string{"config", config_name}
-	out := string(gitCommand(dir, args...))
+	out := string(gitCommand(dir, "", args...))
 	return out[0 : len(out)-1]
 }
 
 func updateServerInfo(dir string) []byte {
 	args := []string{"update-server-info"}
-	return gitCommand(dir, args...)
+	return gitCommand(dir, "", args...)
 }
 
-func gitCommand(dir string, args ...string) []byte {
+func gitCommand(dir string, version string, args ...string) []byte {
 	command := exec.Command(config.GitBinPath, args...)
+	if len(version) > 0 {
+		command.Env = append(os.Environ(), fmt.Sprintf("GIT_PROTOCOL=%s", version))
+	}
 	command.Dir = dir
 	out, err := command.Output()
 
