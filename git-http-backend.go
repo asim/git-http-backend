@@ -23,10 +23,13 @@ type Service struct {
 }
 
 type Config struct {
-	ProjectRoot string
-	GitBinPath  string
-	UploadPack  bool
-	ReceivePack bool
+	AuthPassEnvVar string
+	AuthUserEnvVar string
+	DefaultEnv     string
+	ProjectRoot    string
+	GitBinPath     string
+	UploadPack     bool
+	ReceivePack    bool
 }
 
 type HandlerReq struct {
@@ -38,10 +41,13 @@ type HandlerReq struct {
 }
 
 var config Config = Config{
-	ProjectRoot: "/tmp",
-	GitBinPath:  "/usr/bin/git",
-	UploadPack:  true,
-	ReceivePack: true,
+	AuthPassEnvVar: "",
+	AuthUserEnvVar: "",
+	DefaultEnv:     "",
+	ProjectRoot:    "/tmp",
+	GitBinPath:     "/usr/bin/git",
+	UploadPack:     true,
+	ReceivePack:    true,
 }
 
 var services = map[string]Service{
@@ -63,6 +69,9 @@ var (
 )
 
 func init() {
+	flag.StringVar(&config.AuthPassEnvVar, "auth_pass_env_var", config.AuthPassEnvVar, "set an env var to provide the basic auth pass as")
+	flag.StringVar(&config.AuthUserEnvVar, "auth_user_env_var", config.AuthUserEnvVar, "set an env var to provide the basic auth user as")
+	flag.StringVar(&config.DefaultEnv, "default_env", config.DefaultEnv, "set the default env")
 	flag.StringVar(&config.ProjectRoot, "project_root", config.ProjectRoot, "set project root")
 	flag.StringVar(&config.GitBinPath, "git_bin_path", config.GitBinPath, "set git bin path")
 	flag.StringVar(&address, "server_address", address, "set server address")
@@ -117,7 +126,26 @@ func serviceRpc(hr HandlerReq) {
 	}
 
 	w.Header().Set("Content-Type", fmt.Sprintf("application/x-git-%s-result", rpc))
+	w.Header().Set("Connection", "Keep-Alive")
+	w.Header().Set("Transfer-Encoding", "chunked")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.WriteHeader(http.StatusOK)
+
+	env := []string{}
+
+	if config.DefaultEnv != "" {
+		env = append(env, config.DefaultEnv)
+	}
+
+	user, password, authok := r.BasicAuth()
+	if authok {
+		if config.AuthUserEnvVar != "" {
+			env = append(env, fmt.Sprintf("%s=%s", config.AuthUserEnvVar, user))
+		}
+		if config.AuthPassEnvVar != "" {
+			env = append(env, fmt.Sprintf("%s=%s", config.AuthPassEnvVar, password))
+		}
+	}
 
 	args := []string{rpc, "--stateless-rpc", dir}
 	cmd := exec.Command(config.GitBinPath, args...)
@@ -126,6 +154,7 @@ func serviceRpc(hr HandlerReq) {
 		cmd.Env = append(os.Environ(), fmt.Sprintf("GIT_PROTOCOL=%s", version))
 	}
 	cmd.Dir = dir
+	cmd.Env = env
 	in, err := cmd.StdinPipe()
 	if err != nil {
 		log.Print(err)
@@ -151,7 +180,30 @@ func serviceRpc(hr HandlerReq) {
 	}
 	io.Copy(in, reader)
 	in.Close()
-	io.Copy(w, stdout)
+
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		panic("expected http.ResponseWriter to be an http.Flusher")
+	}
+
+	p := make([]byte, 1024)
+	for {
+		n_read, err := stdout.Read(p)
+		if err == io.EOF {
+			break
+		}
+		n_write, err := w.Write(p[:n_read])
+		if err != nil {
+			fmt.Println(err)
+			os.Exit(1)
+		}
+		if n_read != n_write {
+			fmt.Printf("failed to write data: %d read, %d written\n", n_read, n_write)
+			os.Exit(1)
+		}
+		flusher.Flush()
+	}
+
 	cmd.Wait()
 }
 
