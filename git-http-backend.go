@@ -131,7 +131,7 @@ func serviceRpc(hr HandlerReq) {
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.WriteHeader(http.StatusOK)
 
-	env := []string{}
+	env := os.Environ()
 
 	if config.DefaultEnv != "" {
 		env = append(env, config.DefaultEnv)
@@ -151,7 +151,7 @@ func serviceRpc(hr HandlerReq) {
 	cmd := exec.Command(config.GitBinPath, args...)
 	version := r.Header.Get("Git-Protocol")
 	if len(version) != 0 {
-		cmd.Env = append(os.Environ(), fmt.Sprintf("GIT_PROTOCOL=%s", version))
+		cmd.Env = append(env, fmt.Sprintf("GIT_PROTOCOL=%s", version))
 	}
 	cmd.Dir = dir
 	cmd.Env = env
