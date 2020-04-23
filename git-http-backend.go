@@ -1,4 +1,4 @@
-package main
+package githttpbackend
 
 import (
 	"compress/gzip"
@@ -30,6 +30,7 @@ type Config struct {
 	GitBinPath     string
 	UploadPack     bool
 	ReceivePack    bool
+	RoutePrefix    string
 }
 
 type HandlerReq struct {
@@ -40,7 +41,7 @@ type HandlerReq struct {
 	File string
 }
 
-var config Config = Config{
+var BackendConfig Config = Config{
 	AuthPassEnvVar: "",
 	AuthUserEnvVar: "",
 	DefaultEnv:     "",
@@ -48,20 +49,21 @@ var config Config = Config{
 	GitBinPath:     "/usr/bin/git",
 	UploadPack:     true,
 	ReceivePack:    true,
+	RoutePrefix:    "",
 }
 
 var services = map[string]Service{
-	"(.*?)/git-upload-pack$":                       Service{"POST", serviceRpc, "upload-pack"},
-	"(.*?)/git-receive-pack$":                      Service{"POST", serviceRpc, "receive-pack"},
-	"(.*?)/info/refs$":                             Service{"GET", getInfoRefs, ""},
-	"(.*?)/HEAD$":                                  Service{"GET", getTextFile, ""},
-	"(.*?)/objects/info/alternates$":               Service{"GET", getTextFile, ""},
-	"(.*?)/objects/info/http-alternates$":          Service{"GET", getTextFile, ""},
-	"(.*?)/objects/info/packs$":                    Service{"GET", getInfoPacks, ""},
-	"(.*?)/objects/info/[^/]*$":                    Service{"GET", getTextFile, ""},
-	"(.*?)/objects/[0-9a-f]{2}/[0-9a-f]{38}$":      Service{"GET", getLooseObject, ""},
-	"(.*?)/objects/pack/pack-[0-9a-f]{40}\\.pack$": Service{"GET", getPackFile, ""},
-	"(.*?)/objects/pack/pack-[0-9a-f]{40}\\.idx$":  Service{"GET", getIdxFile, ""},
+	"(.*?)/git-upload-pack$":                       {"POST", serviceRpc, "upload-pack"},
+	"(.*?)/git-receive-pack$":                      {"POST", serviceRpc, "receive-pack"},
+	"(.*?)/info/refs$":                             {"GET", getInfoRefs, ""},
+	"(.*?)/HEAD$":                                  {"GET", getTextFile, ""},
+	"(.*?)/objects/info/alternates$":               {"GET", getTextFile, ""},
+	"(.*?)/objects/info/http-alternates$":          {"GET", getTextFile, ""},
+	"(.*?)/objects/info/packs$":                    {"GET", getInfoPacks, ""},
+	"(.*?)/objects/info/[^/]*$":                    {"GET", getTextFile, ""},
+	"(.*?)/objects/[0-9a-f]{2}/[0-9a-f]{38}$":      {"GET", getLooseObject, ""},
+	"(.*?)/objects/pack/pack-[0-9a-f]{40}\\.pack$": {"GET", getPackFile, ""},
+	"(.*?)/objects/pack/pack-[0-9a-f]{40}\\.idx$":  {"GET", getIdxFile, ""},
 }
 
 var (
@@ -69,21 +71,22 @@ var (
 )
 
 func init() {
-	flag.StringVar(&config.AuthPassEnvVar, "auth_pass_env_var", config.AuthPassEnvVar, "set an env var to provide the basic auth pass as")
-	flag.StringVar(&config.AuthUserEnvVar, "auth_user_env_var", config.AuthUserEnvVar, "set an env var to provide the basic auth user as")
-	flag.StringVar(&config.DefaultEnv, "default_env", config.DefaultEnv, "set the default env")
-	flag.StringVar(&config.ProjectRoot, "project_root", config.ProjectRoot, "set project root")
-	flag.StringVar(&config.GitBinPath, "git_bin_path", config.GitBinPath, "set git bin path")
+	flag.StringVar(&BackendConfig.AuthPassEnvVar, "auth_pass_env_var", BackendConfig.AuthPassEnvVar, "set an env var to provide the basic auth pass as")
+	flag.StringVar(&BackendConfig.AuthUserEnvVar, "auth_user_env_var", BackendConfig.AuthUserEnvVar, "set an env var to provide the basic auth user as")
+	flag.StringVar(&BackendConfig.DefaultEnv, "default_env", BackendConfig.DefaultEnv, "set the default env")
+	flag.StringVar(&BackendConfig.ProjectRoot, "project_root", BackendConfig.ProjectRoot, "set project root")
+	flag.StringVar(&BackendConfig.GitBinPath, "git_bin_path", BackendConfig.GitBinPath, "set git bin path")
+	flag.StringVar(&BackendConfig.RoutePrefix, "route_prefix", BackendConfig.RoutePrefix, "prepend a regex prefix to each git-http-backend route")
 	flag.StringVar(&address, "server_address", address, "set server address")
 }
 
 // Request handling function
 
-func requestHandler() http.HandlerFunc {
+func RequestHandler() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		log.Printf("%s %s %s %s", r.RemoteAddr, r.Method, r.URL.Path, r.Proto)
 		for match, service := range services {
-			re, err := regexp.Compile(match)
+			re, err := regexp.Compile(BackendConfig.RoutePrefix + match)
 			if err != nil {
 				log.Print(err)
 			}
@@ -95,6 +98,9 @@ func requestHandler() http.HandlerFunc {
 				}
 
 				rpc := service.Rpc
+				if BackendConfig.RoutePrefix != "" {
+					r.URL.Path = "/" + strings.TrimPrefix(r.URL.Path, "/"+BackendConfig.RoutePrefix)
+				}
 				file := strings.Replace(r.URL.Path, m[1]+"/", "", 1)
 				dir, err := getGitDir(m[1])
 
@@ -133,22 +139,22 @@ func serviceRpc(hr HandlerReq) {
 
 	env := os.Environ()
 
-	if config.DefaultEnv != "" {
-		env = append(env, config.DefaultEnv)
+	if BackendConfig.DefaultEnv != "" {
+		env = append(env, BackendConfig.DefaultEnv)
 	}
 
 	user, password, authok := r.BasicAuth()
 	if authok {
-		if config.AuthUserEnvVar != "" {
-			env = append(env, fmt.Sprintf("%s=%s", config.AuthUserEnvVar, user))
+		if BackendConfig.AuthUserEnvVar != "" {
+			env = append(env, fmt.Sprintf("%s=%s", BackendConfig.AuthUserEnvVar, user))
 		}
-		if config.AuthPassEnvVar != "" {
-			env = append(env, fmt.Sprintf("%s=%s", config.AuthPassEnvVar, password))
+		if BackendConfig.AuthPassEnvVar != "" {
+			env = append(env, fmt.Sprintf("%s=%s", BackendConfig.AuthPassEnvVar, password))
 		}
 	}
 
 	args := []string{rpc, "--stateless-rpc", dir}
-	cmd := exec.Command(config.GitBinPath, args...)
+	cmd := exec.Command(BackendConfig.GitBinPath, args...)
 	version := r.Header.Get("Git-Protocol")
 	if len(version) != 0 {
 		cmd.Env = append(env, fmt.Sprintf("GIT_PROTOCOL=%s", version))
@@ -275,7 +281,7 @@ func sendFile(content_type string, hr HandlerReq) {
 }
 
 func getGitDir(file_path string) (string, error) {
-	root := config.ProjectRoot
+	root := BackendConfig.ProjectRoot
 
 	if root == "" {
 		cwd, err := os.Getwd()
@@ -317,10 +323,10 @@ func hasAccess(r *http.Request, dir string, rpc string, check_content_type bool)
 		return false
 	}
 	if rpc == "receive-pack" {
-		return config.ReceivePack
+		return BackendConfig.ReceivePack
 	}
 	if rpc == "upload-pack" {
-		return config.UploadPack
+		return BackendConfig.UploadPack
 	}
 
 	return getConfigSetting(rpc, dir)
@@ -349,7 +355,7 @@ func updateServerInfo(dir string) []byte {
 }
 
 func gitCommand(dir string, version string, args ...string) []byte {
-	command := exec.Command(config.GitBinPath, args...)
+	command := exec.Command(BackendConfig.GitBinPath, args...)
 	if len(version) > 0 {
 		command.Env = append(os.Environ(), fmt.Sprintf("GIT_PROTOCOL=%s", version))
 	}
@@ -422,7 +428,7 @@ func hdrCacheForever(w http.ResponseWriter) {
 func main() {
 	flag.Parse()
 
-	http.HandleFunc("/", requestHandler())
+	http.HandleFunc("/", RequestHandler())
 
 	err := http.ListenAndServe(address, nil)
 	if err != nil {
