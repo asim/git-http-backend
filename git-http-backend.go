@@ -79,7 +79,7 @@ func init() {
 
 // Request handling function
 
-func requestHandler() http.HandlerFunc {
+func RequestHandler() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		log.Printf("%s %s %s %s", r.RemoteAddr, r.Method, r.URL.Path, r.Proto)
 		for match, service := range services {
@@ -422,7 +422,7 @@ func hdrCacheForever(w http.ResponseWriter) {
 func main() {
 	flag.Parse()
 
-	http.HandleFunc("/", requestHandler())
+	http.HandleFunc("/", RequestHandler())
 
 	err := http.ListenAndServe(address, nil)
 	if err != nil {
