@@ -22,6 +22,14 @@ go get github.com/asim/git-http-backend
 git-http-backend --project_root=/tmp --git_bin_path=/usr/bin/git
 ```
 
+## Server
+
+To embed your own server import and use the package
+
+```
+import "github.com/asim/git-http-backend/server"
+```
+
 ## License
 
 ```
