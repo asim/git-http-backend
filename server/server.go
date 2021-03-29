@@ -31,6 +31,7 @@ type Config struct {
 	UploadPack     bool
 	ReceivePack    bool
 	RoutePrefix    string
+	CommandFunc    func(*exec.Cmd)
 }
 
 type HandlerReq struct {
@@ -53,6 +54,7 @@ var (
 		UploadPack:     true,
 		ReceivePack:    true,
 		RoutePrefix:    "",
+		CommandFunc:    func(*exec.Cmd) {},
 	}
 )
 
@@ -148,6 +150,9 @@ func serviceRpc(hr HandlerReq) {
 	}
 	cmd.Dir = dir
 	cmd.Env = env
+
+	DefaultConfig.CommandFunc(cmd)
+
 	in, err := cmd.StdinPipe()
 	if err != nil {
 		log.Print(err)
@@ -347,6 +352,9 @@ func gitCommand(dir string, version string, args ...string) []byte {
 		command.Env = append(os.Environ(), fmt.Sprintf("GIT_PROTOCOL=%s", version))
 	}
 	command.Dir = dir
+
+	DefaultConfig.CommandFunc(command)
+
 	out, err := command.Output()
 
 	if err != nil {
