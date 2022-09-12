@@ -1,3 +1,3 @@
 module github.com/asim/git-http-backend
 
-go 1.14
+go 1.18
