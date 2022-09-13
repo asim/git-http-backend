@@ -18,8 +18,35 @@ go get github.com/asim/git-http-backend
 
 ## Usage
 
+Run the backend pointing to a project root and git bin path
 ```
 git-http-backend --project_root=/tmp --git_bin_path=/usr/bin/git
+```
+
+Help
+
+```
+git-http-backend --help
+```
+
+Flags
+
+```
+Usage of ./git-http-backend:
+  -auth_pass_env_var string
+        set an env var to provide the basic auth pass as
+  -auth_user_env_var string
+        set an env var to provide the basic auth user as
+  -default_env string
+        set the default env
+  -git_bin_path string
+        set git bin path (default "/usr/bin/git")
+  -project_root string
+        set project root (default "/tmp")
+  -route_prefix string
+        prepend a regex prefix to each git-http-backend route
+  -server_address string
+        set server address (default ":8080")
 ```
 
 ## Server
