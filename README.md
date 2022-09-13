@@ -57,10 +57,10 @@ To embed your own server import and use the package
 package main
 
 import (
-       "log"
-       "net/http"
+        "log"
+        "net/http"
 
-        github.com/asim/git-http-backend/server"
+        "github.com/asim/git-http-backend/server"
 )
 
 func main() {
