@@ -53,8 +53,23 @@ Usage of ./git-http-backend:
 
 To embed your own server import and use the package
 
-```
-import "github.com/asim/git-http-backend/server"
+```go
+package main
+
+import (
+       "log"
+       "net/http"
+
+        github.com/asim/git-http-backend/server"
+)
+
+func main() {
+	http.HandleFunc("/", server.Handler())
+
+	if err := http.ListenAndServe(":8080", nil); err != nil {
+		log.Fatal("ListenAndServe: ", err)
+	}
+}
 ```
 
 ## License
