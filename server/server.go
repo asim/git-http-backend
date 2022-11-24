@@ -145,12 +145,13 @@ func serviceRpc(hr HandlerReq) {
 	args := []string{rpc, "--stateless-rpc", dir}
 	cmd := exec.Command(DefaultConfig.GitBinPath, args...)
 	version := r.Header.Get("Git-Protocol")
+	
+	cmd.Dir = dir
+	cmd.Env = env
 	if len(version) != 0 {
 		cmd.Env = append(env, fmt.Sprintf("GIT_PROTOCOL=%s", version))
 	}
-	cmd.Dir = dir
-	cmd.Env = env
-
+	
 	DefaultConfig.CommandFunc(cmd)
 
 	in, err := cmd.StdinPipe()
