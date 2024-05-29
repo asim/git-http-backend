@@ -220,7 +220,7 @@ func getInfoRefs(hr HandlerReq) {
     return
   }
 
-  if user != DefaultConfig.AuthUserEnvVar && password != DefaultConfig.AuthPassEnvVar {
+  if authok && user != DefaultConfig.AuthUserEnvVar && password != DefaultConfig.AuthPassEnvVar {
     w.WriteHeader(http.StatusUnauthorized)
     return
   }
