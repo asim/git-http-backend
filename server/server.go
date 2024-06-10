@@ -23,7 +23,7 @@ type Service struct {
 }
 
 type Config struct {
-  RequireAuth    bool
+	RequireAuth    bool
 	AuthPassEnvVar string
 	AuthUserEnvVar string
 	DefaultEnv     string
@@ -47,7 +47,7 @@ var (
 	DefaultAddress = ":8080"
 
 	DefaultConfig = Config{
-    RequireAuth:    false,
+		RequireAuth:    false,
 		AuthPassEnvVar: "",
 		AuthUserEnvVar: "",
 		DefaultEnv:     "",
@@ -147,13 +147,13 @@ func serviceRpc(hr HandlerReq) {
 	args := []string{rpc, "--stateless-rpc", dir}
 	cmd := exec.Command(DefaultConfig.GitBinPath, args...)
 	version := r.Header.Get("Git-Protocol")
-	
+
 	cmd.Dir = dir
 	cmd.Env = env
 	if len(version) != 0 {
 		cmd.Env = append(env, fmt.Sprintf("GIT_PROTOCOL=%s", version))
 	}
-	
+
 	DefaultConfig.CommandFunc(cmd)
 
 	in, err := cmd.StdinPipe()
@@ -213,19 +213,19 @@ func getInfoRefs(hr HandlerReq) {
 	service_name := getServiceType(r)
 	access := hasAccess(r, dir, service_name, false)
 	version := r.Header.Get("Git-Protocol")
-	
-  user, password, authok := r.BasicAuth()
-  if DefaultConfig.RequireAuth && !authok {
-    renderAuthRequire(w)
-    return
-  }
 
-  if authok && user != DefaultConfig.AuthUserEnvVar && password != DefaultConfig.AuthPassEnvVar {
-    w.WriteHeader(http.StatusUnauthorized)
-    return
-  }
-	
-  if access {
+	user, password, authok := r.BasicAuth()
+	if DefaultConfig.RequireAuth && !authok {
+		renderAuthRequire(w)
+		return
+	}
+
+	if authok && user != DefaultConfig.AuthUserEnvVar && password != DefaultConfig.AuthPassEnvVar {
+		w.WriteHeader(http.StatusUnauthorized)
+		return
+	}
+
+	if access {
 		args := []string{service_name, "--stateless-rpc", "--advertise-refs", "."}
 		refs := gitCommand(dir, version, args...)
 
@@ -402,10 +402,10 @@ func renderNoAccess(w http.ResponseWriter) {
 }
 
 func renderAuthRequire(w http.ResponseWriter) {
-  w.Header().Add("Content-Type", "text/plain")
-  w.Header().Add("WWW-Authenticate", "Basic realm=\"authorization needed\"")
-  w.WriteHeader(http.StatusUnauthorized)
-  w.Write([]byte("401 Unauthorized"))
+	w.Header().Add("Content-Type", "text/plain")
+	w.Header().Add("WWW-Authenticate", "Basic realm=\"authorization needed\"")
+	w.WriteHeader(http.StatusUnauthorized)
+	w.Write([]byte("401 Unauthorized"))
 }
 
 // Packet-line handling function
