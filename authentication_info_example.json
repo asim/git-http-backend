@@ -1,0 +1,17 @@
+[
+  {
+    "Username": "user1",
+    "Password": "123456",
+    "Repositories": [
+      "user1-repo0.git",
+      "user1-repo1.git"
+    ]
+  },
+  {
+    "Username": "user2",
+    "Password": "abcdef",
+    "Repositories": [
+      "user2-repo0.git"
+    ]
+  }
+]

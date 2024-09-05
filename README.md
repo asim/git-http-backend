@@ -33,12 +33,8 @@ Flags
 
 ```
 Usage of ./git-http-backend:
-  -require_auth bool
-        set require auth enable/disable
-  -auth_pass_env_var string
-        set an env var to provide the basic auth pass as
-  -auth_user_env_var string
-        set an env var to provide the basic auth user as
+  -auth_data string
+        set auth info data path
   -default_env string
         set the default env
   -git_bin_path string

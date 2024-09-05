@@ -5,6 +5,7 @@ import (
 	"compress/gzip"
 	"fmt"
 	"io"
+  "encoding/json"
 	"log"
 	"net/http"
 	"os"
@@ -16,6 +17,12 @@ import (
 	"time"
 )
 
+type AuthInfo struct {
+  Username string
+  Password string
+  Repositories []string
+}
+
 type Service struct {
 	Method  string
 	Handler func(HandlerReq)
@@ -23,9 +30,7 @@ type Service struct {
 }
 
 type Config struct {
-	RequireAuth    bool
-	AuthPassEnvVar string
-	AuthUserEnvVar string
+  AuthInfoFilePath string
 	DefaultEnv     string
 	ProjectRoot    string
 	GitBinPath     string
@@ -47,9 +52,7 @@ var (
 	DefaultAddress = ":8080"
 
 	DefaultConfig = Config{
-		RequireAuth:    false,
-		AuthPassEnvVar: "",
-		AuthUserEnvVar: "",
+    AuthInfoFilePath: "/tmp/authentication_info_example.json",
 		DefaultEnv:     "",
 		ProjectRoot:    "/tmp",
 		GitBinPath:     "/usr/bin/git",
@@ -122,27 +125,45 @@ func serviceRpc(hr HandlerReq) {
 		return
 	}
 
-	w.Header().Set("Content-Type", fmt.Sprintf("application/x-git-%s-result", rpc))
-	w.Header().Set("Connection", "Keep-Alive")
-	w.Header().Set("Transfer-Encoding", "chunked")
-	w.Header().Set("X-Content-Type-Options", "nosniff")
-	w.WriteHeader(http.StatusOK)
-
 	env := os.Environ()
 
 	if DefaultConfig.DefaultEnv != "" {
 		env = append(env, DefaultConfig.DefaultEnv)
 	}
 
-	user, password, authok := r.BasicAuth()
+	username, password, authok := r.BasicAuth()
+  user := FindUser(username)
 	if authok {
-		if DefaultConfig.AuthUserEnvVar != "" {
-			env = append(env, fmt.Sprintf("%s=%s", DefaultConfig.AuthUserEnvVar, user))
+    // Check is user has access to repository
+    if user.Username != "" && user.Password != "" {
+      requestRepo := strings.Replace(dir, DefaultConfig.ProjectRoot, "", 1)
+      allow := false
+      for _, repo := range user.Repositories {
+        if repo == requestRepo {
+          allow = true
+          break
+        }
+      }
+
+      if !allow {
+        renderNoAccess(w)
+        return
+      }
+    }
+
+		if user.Username != "" {
+			env = append(env, fmt.Sprintf("%s=%s", user.Username, username))
 		}
-		if DefaultConfig.AuthPassEnvVar != "" {
-			env = append(env, fmt.Sprintf("%s=%s", DefaultConfig.AuthPassEnvVar, password))
+		if user.Password != "" {
+			env = append(env, fmt.Sprintf("%s=%s", user.Password, password))
 		}
 	}
+
+  w.Header().Set("Content-Type", fmt.Sprintf("application/x-git-%s-result", rpc))
+	w.Header().Set("Connection", "Keep-Alive")
+	w.Header().Set("Transfer-Encoding", "chunked")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	w.WriteHeader(http.StatusOK)
 
 	args := []string{rpc, "--stateless-rpc", dir}
 	cmd := exec.Command(DefaultConfig.GitBinPath, args...)
@@ -214,13 +235,15 @@ func getInfoRefs(hr HandlerReq) {
 	access := hasAccess(r, dir, service_name, false)
 	version := r.Header.Get("Git-Protocol")
 
-	user, password, authok := r.BasicAuth()
-	if DefaultConfig.RequireAuth && !authok {
+	username, password, authok := r.BasicAuth()
+	if DefaultConfig.AuthInfoFilePath != "" && !authok {
 		renderAuthRequire(w)
 		return
 	}
 
-	if authok && user != DefaultConfig.AuthUserEnvVar && password != DefaultConfig.AuthPassEnvVar {
+  // Check user credential
+  user := FindUser(username)
+	if authok && !(username == user.Username && password == user.Password) {
 		w.WriteHeader(http.StatusUnauthorized)
 		return
 	}
@@ -242,6 +265,33 @@ func getInfoRefs(hr HandlerReq) {
 		hdrNocache(w)
 		sendFile("text/plain; charset=utf-8", hr)
 	}
+}
+
+func FindUser(username string) AuthInfo {
+  if username == "" {
+    return AuthInfo{}
+  }
+
+  var authInfo []AuthInfo
+  var user AuthInfo
+  content, err := os.ReadFile(DefaultConfig.AuthInfoFilePath)
+  if err != nil {
+    log.Print(err)
+  }
+
+  err = json.Unmarshal(content, &authInfo)
+  if err !=  nil {
+    log.Print(err)
+  }
+
+  for _, auth := range authInfo {
+    if auth.Username == username {
+      user = auth
+      break
+    }
+  }
+
+  return user
 }
 
 func getInfoPacks(hr HandlerReq) {
