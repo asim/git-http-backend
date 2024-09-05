@@ -4,6 +4,7 @@ package server
 import (
 	"compress/gzip"
 	"fmt"
+	"io/ioutil"
 	"io"
   "encoding/json"
 	"log"
@@ -274,7 +275,7 @@ func FindUser(username string) AuthInfo {
 
   var authInfo []AuthInfo
   var user AuthInfo
-  content, err := os.ReadFile(DefaultConfig.AuthInfoFilePath)
+  content, err := ioutil.ReadFile(DefaultConfig.AuthInfoFilePath)
   if err != nil {
     log.Print(err)
   }
