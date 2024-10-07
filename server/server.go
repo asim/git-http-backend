@@ -135,7 +135,6 @@ func serviceRpc(hr HandlerReq) {
 	username, password, authok := r.BasicAuth()
   user := FindUser(username)
 	if authok {
-    // Check is user has access to repository
     if user.Username != "" && user.Password != "" {
       requestRepo := strings.Replace(dir, DefaultConfig.ProjectRoot, "", 1)
       allow := false
@@ -242,7 +241,6 @@ func getInfoRefs(hr HandlerReq) {
 		return
 	}
 
-  // Check user credential
   user := FindUser(username)
 	if authok && !(username == user.Username && password == user.Password) {
 		w.WriteHeader(http.StatusUnauthorized)
