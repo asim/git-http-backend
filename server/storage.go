@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 )
 
 var (
@@ -57,6 +58,10 @@ func (s *FilesystemStore) Open(_ context.Context, name string) (Repository, erro
 }
 
 func (s *FilesystemStore) Create(_ context.Context, name string) (Repository, error) {
+	if filepath.Ext(filepath.Clean(name)) != ".git" {
+		return nil, ErrRepositoryNotFound
+	}
+
 	p, err := s.repositoryPath(name)
 	if err != nil {
 		return nil, err
@@ -145,10 +150,25 @@ func (s *FilesystemStore) List(_ context.Context) ([]string, error) {
 }
 
 func (s *FilesystemStore) root() (string, error) {
+	var root string
+	var err error
 	if s.Root != "" {
-		return filepath.Abs(s.Root)
+		root, err = filepath.Abs(s.Root)
+	} else {
+		root, err = os.Getwd()
 	}
-	return os.Getwd()
+	if err != nil {
+		return "", err
+	}
+
+	resolved, err := filepath.EvalSymlinks(root)
+	if err == nil {
+		return resolved, nil
+	}
+	if os.IsNotExist(err) {
+		return root, nil
+	}
+	return "", err
 }
 
 func (s *FilesystemStore) repositoryPath(name string) (string, error) {
@@ -158,9 +178,31 @@ func (s *FilesystemStore) repositoryPath(name string) (string, error) {
 	}
 
 	clean := filepath.Clean(name)
-	if clean == "." || filepath.IsAbs(clean) || clean == ".." || len(clean) >= 3 && clean[:3] == ".."+string(filepath.Separator) {
+	if clean == "." || filepath.IsAbs(clean) || clean == ".." || strings.HasPrefix(clean, ".."+string(filepath.Separator)) {
 		return "", ErrRepositoryNotFound
 	}
 
+	if err := rejectSymlinkComponents(root, clean); err != nil {
+		return "", err
+	}
 	return filepath.Join(root, clean), nil
+}
+
+func rejectSymlinkComponents(root, name string) error {
+	current := root
+	parts := strings.Split(filepath.Clean(name), string(filepath.Separator))
+	for _, part := range parts {
+		current = filepath.Join(current, part)
+		info, err := os.Lstat(current)
+		if err != nil {
+			if os.IsNotExist(err) {
+				return nil
+			}
+			return err
+		}
+		if info.Mode()&os.ModeSymlink != 0 {
+			return ErrRepositoryNotFound
+		}
+	}
+	return nil
 }
