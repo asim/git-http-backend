@@ -4,6 +4,7 @@ package server
 import (
 	"compress/gzip"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -110,25 +111,38 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 
-		if m := re.FindStringSubmatch(r.URL.Path); m != nil {
-			if service.Method != r.Method {
-				renderMethodNotAllowed(w, r)
-				return
-			}
+		indexes := re.FindStringSubmatchIndex(r.URL.Path)
+		if indexes == nil {
+			continue
+		}
 
-			rpc := service.Rpc
-			file := strings.Replace(r.URL.Path, m[1]+"/", "", 1)
-			repo, err := s.Store.Open(r.Context(), strings.TrimPrefix(m[1], "/"))
-			if err != nil {
-				log.Print(err)
-				renderNotFound(w)
-				return
-			}
-
-			hr := HandlerReq{w: w, r: r, Rpc: rpc, Dir: repo.Path(), File: file}
-			service.Handler(s, hr)
+		if service.Method != r.Method {
+			renderMethodNotAllowed(w, r)
 			return
 		}
+
+		matches := re.FindStringSubmatch(r.URL.Path)
+		rpc := service.Rpc
+		repoName := strings.TrimPrefix(matches[1], "/")
+		file := ""
+		if len(indexes) >= 4 && indexes[3] >= 0 && indexes[3] <= len(r.URL.Path) {
+			file = strings.TrimPrefix(r.URL.Path[indexes[3]:], "/")
+		}
+
+		repo, err := s.Store.Open(r.Context(), repoName)
+		if err != nil {
+			log.Print(err)
+			if errors.Is(err, ErrRepositoryNotFound) {
+				renderNotFound(w)
+			} else {
+				renderInternalServerError(w)
+			}
+			return
+		}
+
+		hr := HandlerReq{w: w, r: r, Rpc: rpc, Dir: repo.Path(), File: file}
+		service.Handler(s, hr)
+		return
 	}
 	renderNotFound(w)
 }
@@ -241,15 +255,21 @@ func getInfoRefs(s *Server, hr HandlerReq) {
 	access := s.hasAccess(r, dir, serviceName, false)
 	version := r.Header.Get("Git-Protocol")
 
-	_, _, authok := r.BasicAuth()
-	if s.Config.RequireAuth && !authok {
-		renderAuthRequire(w)
-		return
+	user, password, authok := r.BasicAuth()
+	if s.Config.RequireAuth {
+		if !authok {
+			renderAuthRequire(w)
+			return
+		}
+		if user != s.Config.AuthUserEnvVar || password != s.Config.AuthPassEnvVar {
+			renderAuthRequire(w)
+			return
+		}
 	}
 
 	if access {
 		args := []string{serviceName, "--stateless-rpc", "--advertise-refs", "."}
-		refs := s.gitCommand(context.Background(), dir, version, args...)
+		refs := s.gitCommand(r.Context(), dir, version, args...)
 
 		hdrNocache(w)
 		w.Header().Set("Content-Type", fmt.Sprintf("application/x-git-%s-advertisement", serviceName))
@@ -260,7 +280,7 @@ func getInfoRefs(s *Server, hr HandlerReq) {
 		}
 		w.Write(refs)
 	} else {
-		s.updateServerInfo(dir)
+		s.updateServerInfo(r.Context(), dir)
 		hdrNocache(w)
 		sendFile("text/plain; charset=utf-8", hr)
 	}
@@ -330,8 +350,8 @@ func (s *Server) getGitConfig(configName string, dir string) string {
 	return strings.TrimSpace(out)
 }
 
-func (s *Server) updateServerInfo(dir string) []byte {
-	return s.gitCommand(context.Background(), dir, "", "update-server-info")
+func (s *Server) updateServerInfo(ctx context.Context, dir string) []byte {
+	return s.gitCommand(ctx, dir, "", "update-server-info")
 }
 
 func (s *Server) gitCommand(ctx context.Context, dir string, version string, args ...string) []byte {
@@ -360,6 +380,7 @@ func renderMethodNotAllowed(w http.ResponseWriter, r *http.Request) {
 }
 
 func renderNotFound(w http.ResponseWriter) { w.WriteHeader(http.StatusNotFound); w.Write([]byte("Not Found")) }
+func renderInternalServerError(w http.ResponseWriter) { w.WriteHeader(http.StatusInternalServerError); w.Write([]byte("Internal Server Error")) }
 func renderNoAccess(w http.ResponseWriter) { w.WriteHeader(http.StatusForbidden); w.Write([]byte("Forbidden")) }
 func renderAuthRequire(w http.ResponseWriter) {
 	w.Header().Add("Content-Type", "text/plain")
