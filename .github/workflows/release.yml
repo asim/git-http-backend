@@ -4,14 +4,11 @@ name: goreleaser
 on:
   pull_request:
   push:
-    # run only against tags
     tags:
       - "*"
 
 permissions:
   contents: write
-  # packages: write
-  # issues: write
 
 jobs:
   goreleaser:
@@ -21,21 +18,26 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+
       - name: Set up Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v6
         with:
-          go-version: stable
-      # More assembly might be required: Docker logins, GPG, etc.
-      # It all depends on your needs.
-      - name: Run GoReleaser
+          go-version-file: go.mod
+
+      - name: Run GoReleaser snapshot
+        if: github.event_name == 'pull_request'
         uses: goreleaser/goreleaser-action@v5
         with:
-          # either 'goreleaser' (default) or 'goreleaser-pro'
           distribution: goreleaser
-          # 'latest', 'nightly', or a semver
+          version: "~> v1"
+          args: release --snapshot --clean
+
+      - name: Run GoReleaser
+        if: github.event_name != 'pull_request'
+        uses: goreleaser/goreleaser-action@v5
+        with:
+          distribution: goreleaser
           version: "~> v1"
           args: release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # Your GoReleaser Pro key, if you are using the 'goreleaser-pro' distribution
-          # GORELEASER_KEY: ${{ secrets.GORELEASER_KEY }}
