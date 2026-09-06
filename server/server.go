@@ -103,6 +103,7 @@ func Handler() http.HandlerFunc {
 }
 
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	log.Printf("%s %s %s %s", r.RemoteAddr, r.Method, r.URL.Path, r.Proto)
 	// Authenticate before opening storage or dispatching any Git HTTP endpoint.
 	if s.Config.RequireAuth {
 		user, password, ok := r.BasicAuth()
@@ -112,7 +113,6 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	log.Printf("%s %s %s %s", r.RemoteAddr, r.Method, r.URL.Path, r.Proto)
 	for match, service := range services {
 		re, err := regexp.Compile(s.Config.RoutePrefix + match)
 		if err != nil {
