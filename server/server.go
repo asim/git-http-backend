@@ -103,6 +103,15 @@ func Handler() http.HandlerFunc {
 }
 
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	// Authenticate before opening storage or dispatching any Git HTTP endpoint.
+	if s.Config.RequireAuth {
+		user, password, ok := r.BasicAuth()
+		if !ok || user != s.Config.AuthUserEnvVar || password != s.Config.AuthPassEnvVar {
+			renderAuthRequire(w)
+			return
+		}
+	}
+
 	log.Printf("%s %s %s %s", r.RemoteAddr, r.Method, r.URL.Path, r.Proto)
 	for match, service := range services {
 		re, err := regexp.Compile(s.Config.RoutePrefix + match)
@@ -254,18 +263,6 @@ func getInfoRefs(s *Server, hr HandlerReq) {
 	serviceName := getServiceType(r)
 	access := s.hasAccess(r, dir, serviceName, false)
 	version := r.Header.Get("Git-Protocol")
-
-	user, password, authok := r.BasicAuth()
-	if s.Config.RequireAuth {
-		if !authok {
-			renderAuthRequire(w)
-			return
-		}
-		if user != s.Config.AuthUserEnvVar || password != s.Config.AuthPassEnvVar {
-			renderAuthRequire(w)
-			return
-		}
-	}
 
 	if access {
 		args := []string{serviceName, "--stateless-rpc", "--advertise-refs", "."}

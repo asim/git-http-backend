@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -101,12 +102,27 @@ func (s *repositoryCreateErrorStore) Exists(context.Context, string) (bool, erro
 func (s *repositoryCreateErrorStore) List(context.Context) ([]string, error)       { return nil, nil }
 
 func TestCreateRepositoryNativeHTTPPushAndClone(t *testing.T) {
+	for _, requireAuth := range []bool{false, true} {
+		name := "public"
+		if requireAuth {
+			name = "authenticated"
+		}
+		t.Run(name, func(t *testing.T) { testNativeHTTPPushAndClone(t, requireAuth) })
+	}
+}
+
+func testNativeHTTPPushAndClone(t *testing.T, requireAuth bool) {
+	t.Helper()
+
 	gitBin, err := exec.LookPath("git")
 	if err != nil {
 		t.Skip("native git is required for HTTP integration test")
 	}
 	config := DefaultConfig
 	config.GitBinPath = gitBin
+	config.RequireAuth = requireAuth
+	config.AuthUserEnvVar = "user"
+	config.AuthPassEnvVar = "pass"
 	srv := New(config, NewFilesystemStore(t.TempDir()))
 	if _, err := srv.CreateRepository(context.Background(), "team/example.git"); err != nil {
 		t.Fatal(err)
@@ -135,10 +151,16 @@ func TestCreateRepositoryNativeHTTPPushAndClone(t *testing.T) {
 	}
 	run(source, "add", "hello.txt")
 	run(source, "-c", "user.name=Test", "-c", "user.email=test@example.com", "-c", "commit.gpgsign=false", "commit", "-m", "initial commit")
-	url := httpServer.URL + "/team/example.git"
-	run(source, "push", url, "master")
+	remoteURL, err := url.Parse(httpServer.URL + "/team/example.git")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if requireAuth {
+		remoteURL.User = url.UserPassword("user", "pass")
+	}
+	run(source, "push", remoteURL.String(), "master")
 	clone := filepath.Join(t.TempDir(), "clone")
-	run(source, "clone", url, clone)
+	run(source, "clone", remoteURL.String(), clone)
 	if got, want := run(clone, "rev-parse", "HEAD"), run(source, "rev-parse", "HEAD"); got != want {
 		t.Fatalf("cloned commit = %s, want %s", got, want)
 	}
