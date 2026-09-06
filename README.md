@@ -6,6 +6,19 @@ Grack was written to allow far more webservers to handle Git smart http
 requests. The aim of this project is to improve Git smart http performance by 
 utilising the power of Go.
 
+## Features
+
+- Embeddable Go server implementing `http.Handler`, with independent configuration per instance.
+- Git Smart HTTP clone, fetch, and push using native `git upload-pack` and `git receive-pack`.
+- Bare repository creation in-process with go-git, including cleanup on initialization failure.
+- Pluggable `Store` interface for opening, creating, deleting, checking, and listing repositories.
+- Filesystem storage with nested repository namespaces and path traversal/symlink checks.
+- HTTP Basic authentication across repository requests, configurable route prefixes, and Git command customization.
+- Standalone command-line server and backward-compatible `server.Handler()` entry point.
+
+Custom stores currently need to expose a local repository path. Direct remote
+object storage and a fully Go-based push/fetch engine are not yet implemented.
+
 ## Dependencies
 
 - Go >= 1.25 to build or embed the server
