@@ -46,7 +46,7 @@ type HandlerReq struct {
 
 type Server struct {
 	Config Config
-	Store  RepositoryStore
+	Store  Store
 }
 
 var (
@@ -66,7 +66,7 @@ var (
 	}
 )
 
-func New(config Config, store RepositoryStore) *Server {
+func New(config Config, store Store) *Server {
 	if config.GitBinPath == "" {
 		config.GitBinPath = "/usr/bin/git"
 	}
