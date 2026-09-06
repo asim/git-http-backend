@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"testing"
 )
 
@@ -106,5 +107,32 @@ func TestFilesystemStoreRejectsTraversal(t *testing.T) {
 	store := NewFilesystemStore(t.TempDir())
 	if _, err := store.Create(context.Background(), "../outside.git"); !errors.Is(err, ErrRepositoryNotFound) {
 		t.Fatalf("expected traversal to be rejected, got %v", err)
+	}
+}
+
+func TestFilesystemStoreCreateRequiresGitSuffix(t *testing.T) {
+	store := NewFilesystemStore(t.TempDir())
+	if _, err := store.Create(context.Background(), "plain"); !errors.Is(err, ErrRepositoryNotFound) {
+		t.Fatalf("expected suffixless repository name to be rejected, got %v", err)
+	}
+}
+
+func TestFilesystemStoreRejectsSymlinkComponents(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("symlink creation may require additional privileges on Windows")
+	}
+
+	root := t.TempDir()
+	outside := t.TempDir()
+	if err := os.Symlink(outside, filepath.Join(root, "team")); err != nil {
+		t.Fatal(err)
+	}
+
+	store := NewFilesystemStore(root)
+	if _, err := store.Create(context.Background(), "team/example.git"); !errors.Is(err, ErrRepositoryNotFound) {
+		t.Fatalf("expected symlinked path to be rejected, got %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(outside, "example.git")); !os.IsNotExist(err) {
+		t.Fatalf("repository escaped store root: %v", err)
 	}
 }
