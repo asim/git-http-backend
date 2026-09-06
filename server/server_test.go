@@ -25,6 +25,11 @@ func (s *testStore) Open(_ context.Context, name string) (Repository, error) {
 	return s.repo, s.err
 }
 
+func (s *testStore) Create(context.Context, string) (Repository, error) { return nil, nil }
+func (s *testStore) Delete(context.Context, string) error               { return nil }
+func (s *testStore) Exists(context.Context, string) (bool, error)       { return false, nil }
+func (s *testStore) List(context.Context) ([]string, error)             { return nil, nil }
+
 func TestServerRoutePrefixStaticFile(t *testing.T) {
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, "HEAD"), []byte("ref: refs/heads/main\n"), 0644); err != nil {
