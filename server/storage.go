@@ -13,7 +13,7 @@ type Repository interface {
 	Path() string
 }
 
-type RepositoryStore interface {
+type Store interface {
 	Open(context.Context, string) (Repository, error)
 }
 
