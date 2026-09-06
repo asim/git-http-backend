@@ -8,7 +8,8 @@ utilising the power of Go.
 
 ## Dependencies
 
-- Git >= 1.7
+- Go >= 1.25 to build or embed the server
+- Native Git for HTTP push/fetch; repository creation uses go-git in-process
 
 ## Install
 
@@ -73,6 +74,33 @@ func main() {
 	}
 }
 ```
+
+## Repository creation
+
+Use an instance with a storage implementation to create and serve repositories:
+
+```go
+store := server.NewFilesystemStore("/srv/git")
+srv := server.New(server.DefaultConfig, store)
+
+repo, err := srv.CreateRepository(context.Background(), "team/example.git")
+if err != nil {
+    log.Fatal(err)
+}
+log.Printf("Created %s", repo.Path())
+log.Fatal(http.ListenAndServe(":8080", srv))
+```
+
+`CreateRepository` allocates storage and initializes a bare repository using
+go-git, without invoking Git. If initialization fails, it attempts to delete the
+allocated storage and reports any cleanup error. `Store.Create` alone only
+allocates storage; it does not initialize Git. Filesystem repository names must
+end in `.git` and may include namespaces such as `team/example.git`.
+
+Custom stores implement `Open`, `Create`, `Delete`, `Exists`, and `List`.
+Repositories currently expose a local filesystem `Path()`, which both go-git
+initialization and native Git HTTP operations use. Remote object storage is not
+yet supported directly by this interface.
 
 ## License
 
