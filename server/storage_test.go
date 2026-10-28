@@ -22,8 +22,13 @@ func TestFilesystemStoreOpen(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if repo.Path() != repoPath {
-		t.Fatalf("expected %q, got %q", repoPath, repo.Path())
+
+	expectedPath, err := filepath.EvalSymlinks(repoPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if repo.Path() != expectedPath {
+		t.Fatalf("expected %q, got %q", expectedPath, repo.Path())
 	}
 }
 
