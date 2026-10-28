@@ -85,17 +85,17 @@ func NewDefault() *Server {
 }
 
 var services = map[string]Service{
-	"(.*?)/git-upload-pack$":                       Service{"POST", serviceRpc, "upload-pack"},
-	"(.*?)/git-receive-pack$":                      Service{"POST", serviceRpc, "receive-pack"},
-	"(.*?)/info/refs$":                             Service{"GET", getInfoRefs, ""},
-	"(.*?)/HEAD$":                                  Service{"GET", getTextFile, ""},
-	"(.*?)/objects/info/alternates$":               Service{"GET", getTextFile, ""},
-	"(.*?)/objects/info/http-alternates$":          Service{"GET", getTextFile, ""},
-	"(.*?)/objects/info/packs$":                    Service{"GET", getInfoPacks, ""},
-	"(.*?)/objects/info/[^/]*$":                    Service{"GET", getTextFile, ""},
-	"(.*?)/objects/[0-9a-f]{2}/[0-9a-f]{38}$":      Service{"GET", getLooseObject, ""},
-	"(.*?)/objects/pack/pack-[0-9a-f]{40}\\.pack$": Service{"GET", getPackFile, ""},
-	"(.*?)/objects/pack/pack-[0-9a-f]{40}\\.idx$":  Service{"GET", getIdxFile, ""},
+	"(.*?)/git-upload-pack$":                       {"POST", serviceRpc, "upload-pack"},
+	"(.*?)/git-receive-pack$":                      {"POST", serviceRpc, "receive-pack"},
+	"(.*?)/info/refs$":                             {"GET", getInfoRefs, ""},
+	"(.*?)/HEAD$":                                  {"GET", getTextFile, ""},
+	"(.*?)/objects/info/alternates$":               {"GET", getTextFile, ""},
+	"(.*?)/objects/info/http-alternates$":          {"GET", getTextFile, ""},
+	"(.*?)/objects/info/packs$":                    {"GET", getInfoPacks, ""},
+	"(.*?)/objects/info/[^/]*$":                    {"GET", getTextFile, ""},
+	"(.*?)/objects/[0-9a-f]{2}/[0-9a-f]{38}$":      {"GET", getLooseObject, ""},
+	"(.*?)/objects/pack/pack-[0-9a-f]{40}\\.pack$": {"GET", getPackFile, ""},
+	"(.*?)/objects/pack/pack-[0-9a-f]{40}\\.idx$":  {"GET", getIdxFile, ""},
 }
 
 func Handler() http.HandlerFunc {
